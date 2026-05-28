@@ -20,7 +20,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-riscv_asm = "0.1.0"
+riscv_asm = { git = "https://github.com/Robby-cell/riscv-assembler.git" }
 ```
 
 ### Example
