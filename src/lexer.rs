@@ -62,20 +62,26 @@ pub fn tokenize(source: &str) -> Result<Vec<Token>, AssemblerError> {
                 col_num = 1; // Reset column on new line
                 continue; // Explicitly continue
             }
-            '#' => {
-                // Comment
-                let mut text = String::new();
-                text.push(char);
+            '#' | ';' => {
                 while let Some(&c) = chars.peek() {
                     if c == '\n' {
                         break;
                     }
-                    text.push(chars.next().unwrap()); // Consume char
+                    chars.next();
                     col_num += 1;
                 }
-                // Optionally add Comment token, or just ignore
-                // tokens.push(Token { kind: TokenKind::Comment, text, loc });
-                col_num += 1; // Account for the '#'
+                col_num += 1;
+                continue;
+            }
+            '/' if chars.peek() == Some(&'/') => {
+                while let Some(&c) = chars.peek() {
+                    if c == '\n' {
+                        break;
+                    }
+                    chars.next();
+                    col_num += 1;
+                }
+                col_num += 1;
                 continue;
             }
 
@@ -105,58 +111,24 @@ pub fn tokenize(source: &str) -> Result<Vec<Token>, AssemblerError> {
             '-' | '0'..='9' => {
                 let mut text = String::new();
                 text.push(char);
-                let is_neg = char == '-';
-                if is_neg {
-                    // Ensure next char is a digit if it's just a minus sign
-                    if !chars.peek().map_or(false, |c| c.is_ascii_digit()) {
-                        return Err(err_lex("Expected digit after '-'", line_num, col_num + 1));
-                    }
-                    // consume digits till a char that is not a digit. it could be comma, of new line
-                    // text.push(chars.next().unwrap()); // Consume the digit
-                    // col_num += 1;
-                    loop {
-                        match chars.peek() {
-                            Some(c) => {
-                                if c.is_digit(10) {
-                                    text.push(chars.next().unwrap()); // Consume the digit
-                                    col_num += 1;
-                                } else {
-                                    break;
-                                }
-                            }
-                            None => break,
-                        }
-                    }
-                } else if char == '0' && chars.peek() == Some(&'x') {
-                    // Hex prefix
-                    text.push(chars.next().unwrap()); // Consume 'x'
-                    col_num += 1;
-                    while let Some(&c) = chars.peek() {
-                        if c.is_ascii_hexdigit() {
-                            text.push(chars.next().unwrap());
-                            col_num += 1;
-                        } else {
-                            break;
-                        }
-                    }
-                } else {
-                    // Decimal
-                    while let Some(&c) = chars.peek() {
-                        if c.is_ascii_digit() {
-                            text.push(chars.next().unwrap());
-                            col_num += 1;
-                        } else {
-                            break;
-                        }
+
+                // Read continuously until we hit a non-number/hex character
+                while let Some(&c) = chars.peek() {
+                    if c.is_ascii_hexdigit() || c == 'x' || c == 'X' || c == 'b' || c == 'B' {
+                        text.push(chars.next().unwrap());
+                        col_num += 1;
+                    } else {
+                        break;
                     }
                 }
+
                 tokens.push(Token {
                     kind: TokenKind::Integer,
                     text: text.clone(),
                     loc,
                 });
-                col_num += text.len() - 1; // Update col_num correctly after consuming multiple chars
-                continue; // Already advanced col_num within the loop
+                col_num += text.len() - 1;
+                continue;
             }
 
             //  Identifiers, Directives, Instructions, Registers

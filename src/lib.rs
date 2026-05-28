@@ -5,4 +5,3 @@ pub mod isa;
 pub mod lexer;
 pub mod parser;
 pub mod symbol;
-pub mod utils;

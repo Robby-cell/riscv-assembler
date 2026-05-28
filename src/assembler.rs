@@ -10,6 +10,8 @@ use crate::symbol::SymbolTable;
 pub struct AssemblyOutput {
     /// The machine code as a sequence of words (32-bit values)
     pub code: Vec<u32>,
+    /// Raw unpadded bytes
+    pub bytes: Vec<u8>,
     /// The final size in bytes
     pub size: usize,
     /// Starting address of the code
@@ -180,90 +182,65 @@ fn generate_machine_code(
     symbol_table: &SymbolTable,
     memory_map: &MemoryMap,
 ) -> Result<AssemblyOutput, AssemblerError> {
-    let mut output_address = 0;
     let start_address = memory_map
         .locations
         .first()
         .map(|(_, loc)| loc.address)
         .unwrap_or(0);
 
-    // Pre-allocate bytes for the entire program
-    let total_size = memory_map.current_address as usize;
+    // Calculate size relative to the start address to prevent OOM
+    let total_size = (memory_map.current_address - start_address) as usize;
     let mut bytes = vec![0u8; total_size];
 
     for (i, item) in parsed_items.iter().enumerate() {
         if let Some(address) = memory_map.get_address(i) {
-            output_address = address;
+            // FIXED: Get the relative offset in our vector
+            let offset = (address - start_address) as usize;
 
             match item {
                 ParsedItem::Instruction(instr) => {
-                    // Convert parsed instruction to ISA instruction
                     let isa_instr = convert_to_isa_instruction(instr, symbol_table)?;
-
-                    // Encode the instruction
                     let loc = crate::error::SourceLocation {
                         line: instr.line_number,
                         col: instr.column,
                     };
-                    let encoded = isa_instr.encode(symbol_table, output_address, &loc)?;
+                    let encoded = isa_instr.encode(symbol_table, address, &loc)?;
 
-                    // Write to the output buffer
-                    let offset = output_address as usize;
                     bytes[offset..offset + 4].copy_from_slice(&encoded.to_le_bytes());
                 }
                 ParsedItem::Directive(dir) => match &dir.directive {
-                    Directive::Byte(val) => {
-                        let offset = output_address as usize;
-                        bytes[offset] = *val as u8;
-                    }
+                    Directive::Byte(val) => bytes[offset] = *val as u8,
                     Directive::Half(val) => {
-                        let offset = output_address as usize;
-                        bytes[offset..offset + 2].copy_from_slice(&(*val as u16).to_le_bytes());
+                        bytes[offset..offset + 2].copy_from_slice(&(*val as u16).to_le_bytes())
                     }
                     Directive::Word(val) => {
-                        let offset = output_address as usize;
-                        bytes[offset..offset + 4].copy_from_slice(&(*val as u32).to_le_bytes());
+                        bytes[offset..offset + 4].copy_from_slice(&(*val as u32).to_le_bytes())
                     }
                     Directive::Asciz(s) => {
-                        let offset = output_address as usize;
-                        // Copy the string bytes plus null terminator
                         for (i, b) in s.bytes().enumerate() {
                             bytes[offset + i] = b;
                         }
-                        // Null terminator
-                        bytes[offset + s.len()] = 0;
+                        bytes[offset + s.len()] = 0; // Null term
                     }
                     Directive::Ascii(s) => {
-                        let offset = output_address as usize;
-                        // Copy the string bytes
                         for (i, b) in s.bytes().enumerate() {
                             bytes[offset + i] = b;
                         }
                     }
-                    Directive::Space(n) => {
-                        // Space already filled with zeros by our pre-allocation
-                        let offset = output_address as usize;
+                    Directive::Space(n) | Directive::Zero(n) => {
                         for i in 0..*n as usize {
                             bytes[offset + i] = 0;
                         }
                     }
-                    Directive::Zero(n) => {
-                        // Same as Space, already zeroed
-                        let offset = output_address as usize;
-                        for i in 0..*n as usize {
-                            bytes[offset + i] = 0;
-                        }
-                    }
-                    // Other directives don't generate code
                     _ => {}
                 },
-                _ => {} // Labels and empty lines don't generate code
+                _ => {}
             }
         }
     }
 
-    // Convert bytes to 32-bit words for the output
-    let word_count = (bytes.len() + 3) / 4; // Ceiling division to include partial final word
+    // Convert bytes to 32-bit words for the legacy `code` output
+    let word_count = (bytes.len() + 3) / 4;
     let mut words = Vec::with_capacity(word_count);
 
     for chunk in bytes.chunks(4) {
@@ -276,7 +253,8 @@ fn generate_machine_code(
 
     Ok(AssemblyOutput {
         code: words,
-        size: bytes.len(),
+        bytes, // EXPORT RAW BYTES
+        size: total_size,
         start_address,
     })
 }
@@ -1027,6 +1005,66 @@ fn convert_to_isa_instruction(
 
         // Special instruction
         "ecall" if instr.operands.is_empty() => Ok(Ecall),
+
+        // PSEUDO INSTRUCTIONS
+        "nop" if instr.operands.is_empty() => Ok(Addi {
+            rd: Register::new(0).unwrap(),
+            rs1: Register::new(0).unwrap(),
+            imm: IsaOperand::Immediate(0),
+        }),
+        "mv" if instr.operands.len() == 2 => {
+            let rd = match convert_operand(&instr.operands[0])? {
+                IsaOperand::Register(r) => r,
+                _ => return Err(invalid_operand_error(instr, 0, "register")),
+            };
+            let rs1 = match convert_operand(&instr.operands[1])? {
+                IsaOperand::Register(r) => r,
+                _ => return Err(invalid_operand_error(instr, 1, "register")),
+            };
+            Ok(Addi {
+                rd,
+                rs1,
+                imm: IsaOperand::Immediate(0),
+            })
+        }
+        "li" if instr.operands.len() == 2 => {
+            let rd = match convert_operand(&instr.operands[0])? {
+                IsaOperand::Register(r) => r,
+                _ => return Err(invalid_operand_error(instr, 0, "register")),
+            };
+            let imm = convert_operand(&instr.operands[1])?;
+
+            if let IsaOperand::Immediate(val) = imm {
+                // If the value fits in 12-bits, it's just a standard ADDI
+                if val >= -2048 && val <= 2047 {
+                    Ok(Addi {
+                        rd,
+                        rs1: Register::new(0).unwrap(),
+                        imm,
+                    })
+                }
+                // If the lower 12-bits are 0, we can use a single LUI (Used in the GUI Starter code!)
+                else if (val & 0xFFF) == 0 {
+                    Ok(Lui {
+                        rd,
+                        imm: IsaOperand::Immediate(val >> 12),
+                    })
+                } else {
+                    Err(AssemblerError::EncodingError {
+                        message: format!(
+                            "'li' with large complex value {} requires macro expansion (LUI + ADDI). Please write them manually.",
+                            val
+                        ),
+                        loc: crate::error::SourceLocation {
+                            line: instr.line_number,
+                            col: instr.column,
+                        },
+                    })
+                }
+            } else {
+                return Err(invalid_operand_error(instr, 1, "immediate"));
+            }
+        }
 
         // Add more instructions as needed...
         _ => Err(AssemblerError::EncodingError {

@@ -566,14 +566,36 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Parses a string literal (for .asciz, etc.)
+    /// Parses a string literal (for .asciz, etc.) and unescapes standard sequences
     fn parse_string(&mut self) -> Result<String, AssemblerError> {
         if let Some(token) = self.peek_token() {
             if token.text.starts_with('"') && token.text.ends_with('"') {
                 let token = self.consume_token().unwrap();
-                // Remove the quotes
-                let string = token.text[1..token.text.len() - 1].to_string();
-                Ok(string)
+                let raw = &token.text[1..token.text.len() - 1];
+
+                // UNESCAPE LOGIC
+                let mut unescaped = String::new();
+                let mut chars = raw.chars();
+                while let Some(c) = chars.next() {
+                    if c == '\\' {
+                        match chars.next() {
+                            Some('n') => unescaped.push('\n'),
+                            Some('r') => unescaped.push('\r'),
+                            Some('t') => unescaped.push('\t'),
+                            Some('0') => unescaped.push('\0'),
+                            Some('\\') => unescaped.push('\\'),
+                            Some('"') => unescaped.push('"'),
+                            Some(other) => {
+                                unescaped.push('\\');
+                                unescaped.push(other);
+                            }
+                            None => unescaped.push('\\'),
+                        }
+                    } else {
+                        unescaped.push(c);
+                    }
+                }
+                Ok(unescaped)
             } else {
                 Err(err_parse(
                     format!("Expected string literal, found '{}'", token.text),
