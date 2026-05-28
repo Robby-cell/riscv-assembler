@@ -245,7 +245,7 @@ fn classify_identifier(s: &str) -> TokenKind {
     // Basic check - improve with actual ISA instruction/register names
     // Ideally, load known instructions/registers from isa module.
     match s {
-        // Example registers (add more from ABI names)
+        // Registers
         "zero" | "ra" | "sp" | "gp" | "tp" | "fp" | "s0" | "s1" | "s2" | "s3" | "s4" | "s5" |
         "s6" | "s7" | "s8" | "s9" | "s10" | "s11" | "a0" | "a1" | "a2" | "a3" | "a4" | "a5" |
         "a6" | "a7" | "t0" | "t1" | "t2" | "t3" | "t4" | "t5" | "t6" |
@@ -253,17 +253,19 @@ fn classify_identifier(s: &str) -> TokenKind {
         "x11" | "x12" | "x13" | "x14" | "x15" | "x16" | "x17" | "x18" | "x19" | "x20" |
         "x21" | "x22" | "x23" | "x24" | "x25" | "x26" | "x27" | "x28" | "x29" | "x30" | "x31" => TokenKind::Register,
 
-        // Example instructions (add *all* RV32IM instructions)
-        "add" | "sub" | "sll" | "slt" | "sltu" | "xor" | "srl" | "sra" | "or" | "and" | // R-type
-        "addi" | "slti" | "sltiu" | "xori" | "ori" | "andi" | "slli" | "srli" | "srai" | // I-type (ALU)
-        "lb" | "lh" | "lw" | "lbu" | "lhu" | // I-type (Load)
-        "jalr" | // I-type (Jump)
-        "sb" | "sh" | "sw" | // S-type
-        "beq" | "bne" | "blt" | "bge" | "bltu" | "bgeu" | // B-type
-        "lui" | "auipc" | // U-type
-        "jal" | // J-type
-        "mul" | "mulh" | "mulhsu" | "mulhu" | "div" | "divu" | "rem" | "remu" | // M Extension
-        "ecall"
+        // Instructions & Pseudo-Instructions
+        "add" | "sub" | "sll" | "slt" | "sltu" | "xor" | "srl" | "sra" | "or" | "and" | 
+        "addi" | "slti" | "sltiu" | "xori" | "ori" | "andi" | "slli" | "srli" | "srai" | 
+        "lb" | "lh" | "lw" | "lbu" | "lhu" | 
+        "jalr" | 
+        "sb" | "sh" | "sw" | 
+        "beq" | "bne" | "blt" | "bge" | "bltu" | "bgeu" | 
+        "lui" | "auipc" | 
+        "jal" | 
+        "mul" | "mulh" | "mulhsu" | "mulhu" | "div" | "divu" | "rem" | "remu" | 
+        "ecall" |
+        // PSEUDO INSTRUCTIONS 
+        "li" | "mv" | "nop" | "j" | "ret" 
          => TokenKind::Instruction,
 
         // Default to identifier (likely a label)
