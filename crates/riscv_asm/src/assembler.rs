@@ -16,43 +16,63 @@ pub struct AssemblyOutput {
     pub start_address: u32,
 }
 
-/// Assembles RISC-V assembly code into machine code
-pub fn assemble(source: &str) -> Result<AssemblyOutput, AssemblerError> {
-    // Step 1: Tokenize the assembly code
-    let tokens = tokenize(source)?;
+pub struct Assembler {
+    _priv: (),
+}
 
-    // Step 2: Parse tokens and build the symbol table
-    let mut symbol_table = SymbolTable::new();
-    let mut parser = Parser::new(&tokens);
-    let parsed_items = parser.parse_all(&mut symbol_table)?;
+impl Default for Assembler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
-    // Check for unresolved symbols
-    let unresolved = symbol_table.check_unresolved();
-    if !unresolved.is_empty() {
-        let mut errors = Vec::new();
-        for (name, lines) in unresolved {
-            errors.push(AssemblerError::SymbolError {
-                message: format!("Undefined symbol: {}", name),
-                loc: crate::error::SourceLocation {
-                    line: *lines.first().unwrap_or(&0),
-                    col: 0,
-                },
-            });
-        }
-        if errors.len() == 1 {
-            return Err(errors.remove(0));
-        } else {
-            return Err(AssemblerError::MultipleErrors(errors));
-        }
+impl Assembler {
+    pub fn new() -> Self {
+        Self { _priv: () }
     }
 
-    // Step 3: Allocate memory based on parsed items
-    let mut memory_map = MemoryMap::new();
-    allocate_memory(&parsed_items, &mut memory_map)?;
+    /// Assembles RISC-V assembly code into machine code
+    pub fn assemble(self, source: &str) -> Result<AssemblyOutput, AssemblerError> {
+        // Step 1: Tokenize the assembly code
+        let tokens = tokenize(source)?;
 
-    // Step 4: Generate machine code
-    let output = generate_machine_code(&parsed_items, &symbol_table, &memory_map)?;
-    Ok(output)
+        // Step 2: Parse tokens and build the symbol table
+        let mut symbol_table = SymbolTable::new();
+        let mut parser = Parser::new(&tokens);
+        let parsed_items = parser.parse_all(&mut symbol_table)?;
+
+        // Check for unresolved symbols
+        let unresolved = symbol_table.check_unresolved();
+        if !unresolved.is_empty() {
+            let mut errors = Vec::new();
+            for (name, lines) in unresolved {
+                errors.push(AssemblerError::SymbolError {
+                    message: format!("Undefined symbol: {}", name),
+                    loc: crate::error::SourceLocation {
+                        line: *lines.first().unwrap_or(&0),
+                        col: 0,
+                    },
+                });
+            }
+            if errors.len() == 1 {
+                return Err(errors.remove(0));
+            } else {
+                return Err(AssemblerError::MultipleErrors(errors));
+            }
+        }
+
+        // Step 3: Allocate memory based on parsed items
+        let mut memory_map = MemoryMap::new();
+        allocate_memory(&parsed_items, &mut memory_map)?;
+
+        // Step 4: Generate machine code
+        let output = generate_machine_code(&parsed_items, &symbol_table, &memory_map)?;
+        Ok(output)
+    }
+}
+
+pub fn assemble(source: &str) -> Result<AssemblyOutput, AssemblerError> {
+    Assembler::new().assemble(source)
 }
 
 /// Represents a memory location during assembly
