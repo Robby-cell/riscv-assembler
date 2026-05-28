@@ -1,11 +1,11 @@
 use crate::assembler::AssemblyOutput;
-use clap::ValueEnum;
+
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::path::Path;
 
 /// Output format for the assembled binary
-#[derive(Debug, Clone, Copy, ValueEnum)]
+#[derive(Debug, Clone, Copy)]
 pub enum OutputFormat {
     /// Raw binary format (just the bytes)
     Binary,

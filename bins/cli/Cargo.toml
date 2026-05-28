@@ -1,9 +1,0 @@
-[package]
-name = "riscv-assembler-cli"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]
-riscv_asm = { path = "../../crates/riscv_asm" }
-anyhow = "1.0"
-clap.workspace = true
